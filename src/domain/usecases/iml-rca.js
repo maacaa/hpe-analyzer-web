@@ -4,6 +4,7 @@
 // firmware advisories.
 
 import { imlDocUrl } from "../services/iml-format.js";
+import { buildPlaybook } from "../services/critical-playbook.js";
 
 /** Extract the hardware component(s) affected by a critical IML message. */
 /**
@@ -76,6 +77,7 @@ export function buildRca(iml, firmware, platform, kb) {
           symptom: entry.symptom ?? null,
           category: entry.category ?? null,
           platforms: entry.platforms ?? null,
+          playbook: buildPlaybook(e.alarm, finalTitle, entry.category ?? null),
           bugs,
           severity: e.severity,
           classCode: e.classCode,

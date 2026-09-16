@@ -275,6 +275,20 @@ export const FIRMWARE_ADVISORIES = [
     severity: "critical",
   },
 
+  // ================= Innovation Engine (IE) =================
+  {
+    id: "a00121346en_us",
+    component: "Intel Innovation Engine (IE)",
+    platforms: ["Gen10"],
+    affected: { max: "0.2.2.3" },
+    fixedIn: "0.2.3.0",
+    title: "Brief CPU or network traffic loss every 24 hours (IE FW)",
+    description:
+      "Approximately every 24 hours, the server may experience a brief loss of CPU utilization and a drop in network traffic for ~50 ms, which can result in dropped network clients. Affects Gen10 servers with Intel Xeon Scalable processors running Innovation Engine (IE) FW revision 0.2.2.2 or 0.2.2.3 (and older 0.2.x revisions).",
+    resolvesErrorCodes: [],
+    severity: "warning",
+  },
+
   // ================= Power Management Controller =================
   {
     id: "a00118715en_us",

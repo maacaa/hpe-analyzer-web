@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LogRow, Severity } from "../types";
+import type { LogRow, Severity, Summary } from "../types";
 import { VirtualList } from "./VirtualList";
 import { SevBadge } from "./ImlTab";
+import { KpiStrip } from "./KpiStrip";
 import { useDebouncedValue } from "../hooks";
 import type { AnalyzerClient } from "../api/worker-client";
 
@@ -27,14 +28,24 @@ export function LogListTab({
   client,
   showCode = false,
   searchPlaceholder,
+  summary,
+  onNavigate,
+  filter: externalFilter,
+  onFilterChange,
 }: {
   title: string;
   tab: "iml" | "events";
   client: AnalyzerClient;
   showCode?: boolean;
   searchPlaceholder: string;
+  summary?: Summary;
+  onNavigate?: (tab: "tips") => void;
+  filter?: Severity | "all";
+  onFilterChange?: (f: Severity | "all") => void;
 }) {
-  const [filter, setFilter] = useState<Severity | "all">("all");
+  const [internalFilter, setInternalFilter] = useState<Severity | "all">("all");
+  const filter = externalFilter ?? internalFilter;
+  const setFilter = onFilterChange ?? setInternalFilter;
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query, 200);
   const [rows, setRows] = useState<LogRow[]>([]);
@@ -83,6 +94,14 @@ export function LogListTab({
 
   return (
     <div className="panel panel-fill">
+      {summary && onNavigate && (
+        <KpiStrip
+          summary={summary}
+          filter={filter}
+          onFilterChange={setFilter}
+          onNavigate={onNavigate}
+        />
+      )}
       <div className="panel-head">
         <h3>{title}</h3>
         <span className="muted">

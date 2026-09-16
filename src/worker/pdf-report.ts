@@ -341,6 +341,17 @@ export async function buildPdfReport(
         8.5
       );
       paragraph(r.title, color, true, 10.5);
+      if (r.playbook) {
+        paragraph(`What this error means: ${r.playbook.meaning}`, BODY, false, 9);
+        for (const d of r.playbook.details ?? []) {
+          paragraph(`${d.label}: ${d.value}`, BODY, false, 8.5);
+        }
+        let n = 1;
+        for (const step of r.playbook.steps) {
+          paragraph(`What to do (${n}): ${step}`, BODY, false, 9);
+          n++;
+        }
+      }
       if (r.cause) paragraph(`Cause (HPE): ${r.cause}`, BODY, false, 9);
       if (r.resolution) paragraph(`Resolution (HPE): ${r.resolution}`, BODY, false, 9);
       if (r.docUrl) {

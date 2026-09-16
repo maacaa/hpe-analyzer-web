@@ -62,6 +62,11 @@ export interface HardwareEntry {
   iloVersion?: string;
   bmcVersion?: string;
   cpldVersion?: string;
+  vendorId?: number;
+  deviceId?: number;
+  subsystemVendorId?: string;
+  subsystemDeviceId?: number;
+  driverVersion?: string;
   status?: HardwareStatus;
   issues?: HardwareIssue[];
   source: string;
@@ -115,6 +120,12 @@ export interface FirmwareAdvisory extends BugEntry {
   resolvesErrorCodes: string[];
 }
 
+export interface Playbook {
+  meaning: string;
+  details?: { label: string; value: string }[];
+  steps: string[];
+}
+
 export interface RcaEntry {
   title: string;
   components: string[];
@@ -123,6 +134,7 @@ export interface RcaEntry {
   symptom?: string | null;
   category?: string | null;
   platforms?: string[] | null;
+  playbook?: Playbook | null;
   bugs: BugEntry[];
   severity: Severity;
   classCode: number;

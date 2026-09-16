@@ -120,7 +120,7 @@ export function enrichHardware(hardware, iml, meta, firmware = []) {
   // Synthetic "System board" entry from the factory product identity plus the
   // board-level firmware versions and total system memory.
   if (meta.productName) {
-    const rom = firmware.find((f) => /^System ROM/.test(f.component));
+    const rom = firmware.find((f) => /(^System ROM|^BIOS \(System ROM\))/.test(f.component));
     const ilo = firmware.find((f) => /iLO \(Lights-Out Management\)/.test(f.component));
     const bmc = firmware.find((f) => f.component === "BMC");
     const cpld = firmware.find((f) => f.component === "System CPLD");

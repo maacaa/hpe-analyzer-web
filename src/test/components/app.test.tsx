@@ -147,32 +147,32 @@ describe("App", () => {
     expect(screen.getByText("System CPLD")).toBeInTheDocument();
   });
 
-  it("shows the Analyze another file button and returns to the drop zone", async () => {
+  it("shows the Analyze another AHS file button and opens the upload overlay", async () => {
     const client = await runAnalysis();
-    const btn = screen.getByRole("button", { name: /analyze another file/i });
-    expect(btn).toBeInTheDocument();
-    fireEvent.click(btn);
-    expect(screen.getByText(/Drop an AHS file here/)).toBeInTheDocument();
-    // full reset: the worker is terminated to release the resident model
-    expect(client.cancel).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /analyze another ahs file/i }));
+    expect(screen.getByText("Analyze AHS file")).toBeInTheDocument();
+    // Escape closes the overlay and keeps the current analysis intact
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByText("Analyze AHS file").closest('[data-open]')).toHaveAttribute("data-open", "false");
+    expect(client.cancel).not.toHaveBeenCalled();
   });
 
-  it("shows the export report button after analysis", async () => {
+  it("shows the export report button in the topbar after analysis", async () => {
     await runAnalysis();
     expect(screen.getByRole("button", { name: /export report/i })).toBeInTheDocument();
   });
 
   it("adds the analyzed file to the recents list and reopens it from cache", async () => {
     const client = await runAnalysis();
-    fireEvent.click(screen.getByRole("button", { name: /analyze another file/i }));
+    fireEvent.click(screen.getByRole("button", { name: /analyze another ahs file/i }));
     const item = await screen.findByRole("button", { name: "test.ahs" });
     // reopen from the local cache (RF-7/RF-12)
     fireEvent.click(item);
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /analyze another file/i })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: /analyze another ahs file/i })).toBeInTheDocument()
     );
     expect(client.openCached).toHaveBeenCalledWith("fp-1");
-    expect(screen.getByText(/SN ABC123/)).toBeInTheDocument();
+    expect(screen.getByText("ABC123")).toBeInTheDocument();
   });
 
   it("exposes a Cancel button while loading that terminates the worker", async () => {

@@ -80,7 +80,12 @@
  * @property {string} [iloVersion]
  * @property {string} [bmcVersion]
  * @property {string} [cpldVersion]
- * @property {HardwareStatus} [status]
+  * @property {number} [vendorId] PCI vendor ID (0x1E46…), zbb PCI inventory only
+  * @property {number} [deviceId] PCI device ID (e.g. 0x1657 for a BCM5719)
+  * @property {string} [subsystemVendorId] PCI subsystem vendor ID (e.g. "103C")
+  * @property {number} [subsystemDeviceId] PCI subsystem device ID
+  * @property {string} [driverVersion] PCI driver/firmware version from the platform inventory
+  * @property {HardwareStatus} [status]
  * @property {Array<{date: string, severity: Severity, message: string}>} [issues] exact IML alarms that produced the status
  * @property {string} source
  */
@@ -141,6 +146,7 @@
  * @property {string|null} [category]
  * @property {string[]|null} [platforms]
  * @property {FirmwareAdvisory[]} bugs
+ * @property {Playbook|null} [playbook]
  * @property {Severity} severity
  * @property {number} classCode
  * @property {number} eventCode
@@ -148,6 +154,14 @@
  * @property {number} count
  * @property {string} lastDate
  * @property {number|null} lastTimestamp
+ */
+
+/**
+ * Structured "what to do" guidance attached to critical events.
+ * @typedef {object} Playbook
+ * @property {string} meaning What the error means, with field-level explanation.
+ * @property {{label: string, value: string}[]} [details] Decoded message fields.
+ * @property {string[]} steps Ordered troubleshooting actions.
  */
 
 /**

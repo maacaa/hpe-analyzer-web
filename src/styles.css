@@ -433,8 +433,8 @@ body {
 
 .content {
   flex: 1;
-  overflow: hidden;
-  display: flex;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* Panels */
@@ -893,6 +893,75 @@ body {
   line-height: 1.5;
 }
 
+.rca-playbook {
+  background: rgba(255, 84, 112, 0.06);
+  border: 1px solid rgba(255, 84, 112, 0.25);
+  border-radius: 9px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.rca-playbook > p {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.rca-playbook-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--critical);
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+
+.rca-playbook .rca-playbook-label:not(:first-child) {
+  margin-top: 10px;
+}
+
+.rca-playbook-details {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rca-playbook-detail {
+  background: var(--bg3);
+  border-radius: 7px;
+  padding: 8px 10px;
+}
+
+.rca-playbook-detail-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.rca-playbook-detail-value {
+  font-family: var(--mono, monospace);
+  font-size: 12.5px;
+  margin-top: 2px;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.rca-playbook-steps {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rca-playbook-steps li {
+  line-height: 1.45;
+  color: var(--text);
+}
+
 .adv-list {
   margin-bottom: 18px;
 }
@@ -1019,4 +1088,73 @@ code.fw-hex {
 .error-card p {
   margin: 0 0 16px;
   word-break: break-word;
+}
+
+/* ── KPI strip (IML Logs) ── */
+.kpi-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.kpi-card {
+  flex: 1;
+  min-width: 140px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.kpi-card.clickable {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.kpi-card.clickable:hover {
+  border-color: var(--accent);
+}
+
+.kpi-card.clickable.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.kpi-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.kpi-value.critical {
+  color: var(--critical);
+}
+
+.kpi-value.warning {
+  color: var(--warning);
+}
+
+.kpi-value.info {
+  color: var(--info);
+}
+
+.kpi-value.accent {
+  color: var(--accent);
+}
+
+/* ── KPI strip (IML Logs) ── */
+@media (max-width: 768px) {
+  .kpi-row {
+    flex-direction: column;
+  }
 }

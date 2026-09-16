@@ -1,8 +1,16 @@
-import type { Severity } from "../types";
+import type { Severity, Summary } from "../types";
 import { LogListTab } from "./LogListTab";
 import type { AnalyzerClient } from "../api/worker-client";
 
-export function ImlTab({ client }: { client: AnalyzerClient }) {
+export function ImlTab({
+  client,
+  summary,
+  onNavigate,
+}: {
+  client: AnalyzerClient;
+  summary?: Summary;
+  onNavigate?: (tab: "tips") => void;
+}) {
   return (
     <LogListTab
       title="Integrated Management Log"
@@ -10,6 +18,8 @@ export function ImlTab({ client }: { client: AnalyzerClient }) {
       client={client}
       showCode
       searchPlaceholder="Search messages…"
+      summary={summary}
+      onNavigate={onNavigate}
     />
   );
 }

@@ -11,6 +11,7 @@ const TYPE_LABEL: Record<string, string> = {
   "video-controller": "Video controller",
   fan: "Fan",
   "power-supply": "Power supply",
+  "pci-device": "PCI card",
   "system-board": "System board",
 };
 
@@ -40,6 +41,11 @@ const FIELD_ORDER: [keyof HardwareEntry, string][] = [
   ["interface", "Interface"],
   ["macAddress", "MAC address"],
   ["adapterType", "Adapter type"],
+  ["vendorId", "PCI vendor ID"],
+  ["deviceId", "PCI device ID"],
+  ["subsystemVendorId", "Subsystem vendor"],
+  ["subsystemDeviceId", "Subsystem device"],
+  ["driverVersion", "Driver version"],
   ["correctable", "Correctable errors"],
   ["uncorrectable", "Uncorrectable errors"],
   ["present", "Present"],

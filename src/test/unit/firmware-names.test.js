@@ -34,7 +34,7 @@ describe("normalizeFirmware", () => {
 
   it("splits ROM version 'v2.34 (04/08/2020)'", () => {
     const f = normalizeFirmware("System ROM", "v2.34 (04/08/2020)", "zbb");
-    expect(f.component).toBe("System ROM");
+    expect(f.component).toBe("BIOS (System ROM)");
     expect(f.version).toBe("2.34");
     expect(f.date).toBe("04/08/2020");
     expect(f.format).toBe("rom");

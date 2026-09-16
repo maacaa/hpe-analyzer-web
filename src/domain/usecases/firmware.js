@@ -7,23 +7,53 @@ import { parseVersion, compareVersions } from "../services/version-match.js";
 /**
  * Normalize raw firmware entries to human-readable component names, merge the
  * bcert ROM family code into the current System ROM entry, and deduplicate by
- * component keeping the highest version.
- * @param {Array<{component:string, version:string, source:string}>} rawFirmware
+ * component keeping the highest (and dated) version.
+ * @param {Array<{component:string, version:string, source:string, date?:string|null}>} rawFirmware
+ * @returns {import("../entities/model.js").FirmwareEntry[]}
+ */
+const ROM_MAIN = "BIOS (System ROM)";
+/** "Oct 13 2020" (zbb iLO "built on") -> "10/13/2020", passthrough otherwise.
+ * @param {string|undefined|null} date
+ * @returns {string|undefined|null}
+ */
+function normalizeDate(date) {
+  const m = /^([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})$/.exec(String(date ?? ""));
+  if (m) {
+    const mm = {
+      jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+      jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+    }[m[1].toLowerCase()];
+    if (mm) return `${mm}/${m[2].padStart(2, "0")}/${m[3]}`;
+  }
+  return date;
+}
+
+/**
+ * Normalize raw firmware entries to human-readable component names, merge the
+ * bcert ROM family code into the current System ROM entry, and deduplicate by
+ * component keeping the highest (and dated) version.
+ * @param {Array<{component:string, version:string, source:string, date?:string|null}>} rawFirmware
  * @returns {import("../entities/model.js").FirmwareEntry[]}
  */
 export function normalizeFirmwareSet(rawFirmware) {
-  let normalized = rawFirmware.map((f) =>
-    normalizeFirmware(f.component, f.version, f.source)
-  );
+  let normalized = rawFirmware.map((f) => {
+    const n = normalizeFirmware(f.component, f.version, f.source);
+    // raw entries may carry a build date the normalizer cannot derive from
+    // the version string alone (zbb iLO "built on", inline records, ...)
+    const rawDate = normalizeDate(f.date);
+    if (rawDate && !n.date) n.date = rawDate;
+    return n;
+  });
   // Merge the bcert ROM family code into the current System ROM entry (zbb).
   const famIdx = normalized.findIndex(
     (f) => f.rawKey && /^(U|A|I)\d{2}$/.test(f.rawKey)
   );
   if (famIdx >= 0) {
-    const family = normalized[famIdx].rawKey;
+    // reuse the family entry's labelled component (includes the platform)
+    const familyComponent = normalized[famIdx].component;
     for (const f of normalized) {
-      if (f.component === "System ROM") {
-        f.component = `System ROM (family ${family})`;
+      if (f.component === ROM_MAIN) {
+        f.component = familyComponent;
       }
     }
     normalized.splice(famIdx, 1);
@@ -40,7 +70,9 @@ export function normalizeFirmwareSet(rawFirmware) {
       const prev = parseVersion(existing.version);
       if (
         (cur && prev && compareVersions(cur, prev) > 0) ||
-        (!cur && !prev && f.version.length > existing.version.length)
+        (!cur && !prev && f.version.length > existing.version.length) ||
+        (cur && prev &&
+          compareVersions(cur, prev) === 0 && !existing.date && f.date)
       ) {
         byComponent.set(f.component, f);
       }

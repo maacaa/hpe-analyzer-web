@@ -45,7 +45,7 @@ const EXACT = {
   "Power Management Controller Firmware": { name: "Power Management Controller (PMC)", category: CATEGORY.POWER, format: "decimal", description: "Power Management Controller (PMC/PMIC) firmware." },
   "Power Management Controller FW Bootloader": { name: "Power Management Controller (Bootloader)", category: CATEGORY.POWER, format: "decimal", description: "Power Management Controller bootloader." },
 
-  "System ROM": { name: "System ROM", category: CATEGORY.ROM, format: "rom", description: "System ROM (BIOS/UEFI) — the main server firmware." },
+  "System ROM": { name: "BIOS (System ROM)", category: CATEGORY.ROM, format: "rom", description: "System ROM (BIOS/UEFI) — the main server firmware." },
   "Redundant System ROM": { name: "Redundant System ROM", category: CATEGORY.ROM, format: "rom", description: "Redundant/backup copy of the System ROM used for recovery." },
 
   "STMicroGen10PlusTPM": { name: "TPM (Trusted Platform Module)", category: CATEGORY.SECURITY, format: "decimal", description: "STMicroelectronics Trusted Platform Module — cryptographic security chip firmware." },
@@ -163,7 +163,7 @@ export function normalizeFirmware(key, value, source) {
   if (ROM_FAMILY_RE.test(key)) {
     const platform = key[0] === "U" ? "Intel" : key[0] === "A" ? "AMD" : "Blade";
     return {
-      component: `System ROM (${platform}, family ${key})`,
+      component: `BIOS (System ROM, ${platform} family ${key})`,
       category: CATEGORY.ROM,
       description: "System ROM (BIOS/UEFI) family identifier and build date.",
       version,

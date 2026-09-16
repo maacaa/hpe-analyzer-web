@@ -1,5 +1,6 @@
 ﻿import { describe, it, expect } from "vitest";
 import { normalizeCriticalAlarm, extractComponent } from "../../domain/usecases/iml-rca.js";
+import { buildPlaybook } from "../../domain/services/critical-playbook.js";
 
 describe("normalizeCriticalAlarm", () => {
   it("extracts a stable title from a component-specific message", () => {
@@ -38,5 +39,51 @@ describe("extractComponent", () => {
     expect(
       extractComponent("X (Processor 2, APIC ID 0x40, Bank 0x1)")
     ).toBe("Processor 2");
+  });
+});
+
+describe("buildPlaybook", () => {
+  it("always returns a meaning and ordered steps", () => {
+    for (const cat of [
+      "pcie",
+      "memory",
+      "processor",
+      "cooling",
+      "power",
+      "storage",
+      "network",
+      "security",
+      "ilo",
+      "firmware",
+      "system",
+      null,
+    ]) {
+      const pb = buildPlaybook("Some message", "Some title", cat);
+      expect(pb.meaning.length).toBeGreaterThan(40);
+      expect(pb.steps.length).toBeGreaterThan(2);
+      expect(pb.steps.some((s) => s.length > 10)).toBe(true);
+    }
+  });
+
+  it("decodes PCIe bus/device/function and error status bits", () => {
+    const pb = buildPlaybook(
+      "Uncorrectable PCI Express Error Detected. PCIe Errors (Segment 0x0, Bus 0x61, Device 0x0, Function 0x0). Uncorrectable Error Status: 0x150000",
+      "Uncorrectable PCI Express Error Detected",
+      "pcie"
+    );
+    const bus = pb.details?.find((d) => d.label.includes("endpoint"));
+    expect(bus?.value).toContain("0x61");
+    const status = pb.details?.find((d) => d.label.includes("Status"));
+    expect(status?.value).toContain("Completion Timeout");
+    expect(status?.value).toContain("0x150000");
+  });
+
+  it("flags reported DIMMs in memory events", () => {
+    const pb = buildPlaybook(
+      "Uncorrectable Memory Error Threshold Exceeded (Processor 1, DIMM 10)",
+      "Uncorrectable Memory Error Threshold Exceeded",
+      "memory"
+    );
+    expect(pb.details?.[0].value).toContain("DIMM 10");
   });
 });

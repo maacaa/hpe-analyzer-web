@@ -285,3 +285,143 @@ describe("zbb-stream: system identity tuple", () => {
     }
   });
 });
+
+describe("zbb-stream: PCI card / platform inventory rows", () => {
+  function makeSink() {
+    const collected2 = { pci: [], slots: [] };
+    const keys = new Set();
+    return {
+      collected: collected2,
+      s: null,
+      onEntry() {},
+      onInline() {},
+      onFirmwareMatches() {},
+      onSystemIdentity() {},
+      onPciCard(c) {
+        const k = JSON.stringify(["pci", c]);
+        if (keys.has(k)) return;
+        keys.add(k);
+        collected2.pci.push(c);
+      },
+      onPlatformSlot(s) {
+        const k = JSON.stringify(["slot", s]);
+        if (keys.has(k)) return;
+        keys.add(k);
+        collected2.slots.push(s);
+      },
+    };
+  }
+
+  function makeSinkWrap() {
+    const sink = makeSink();
+    return { s: { out: sink.collected, ...sink } };
+  }
+
+  function s0(str) {
+    const b = te.encode(str);
+    const out = new Uint8Array(32);
+    out.set(b);
+    return out;
+  }
+
+  const blast = new Uint8Array([0x11, 0x46, 0x62, 0x51, 0xed]);
+
+  /** iLO 5 PCI device-table row (name, 4xNA, manufacturer, subsystem vid, IDs, driver). */
+  function pciRow() {
+    const parts = [blast, te.encode("HPE Ethernet 1Gb 4-port 331i Adapter\x00")];
+    for (let i = 0; i < 4; i++) parts.push(te.encode("N/A\x00"), new Uint8Array(11));
+    parts.push(te.encode("Broadcom\x00"), te.encode("103C\x00"), new Uint8Array(13));
+    parts.push(new Uint8Array([0xe4, 0x14, 0x57, 0x16, 0x3c, 0x10, 0xbe, 0x22]));
+    parts.push(te.encode("20.14.57\x00"));
+    return u8concat(...parts);
+  }
+
+  /** iLO 6 platform inventory row (32-byte string slots). */
+  function slotRow(location, manufacturer, model) {
+    return u8concat(
+      new Uint8Array([0]),
+      s0(location),
+      s0(manufacturer ?? ""),
+      s0(model ?? ""),
+      s0(""),
+      s0(""),
+      s0("K53978-007"),
+      s0(""),
+      s0("507C6F7A039C"),
+      s0("1.3310.0")
+    );
+  }
+
+  it("extracts a PCI device-table row", () => {
+    const sink = makeSinkWrap();
+    const scanner = createZbbScanner(sink.s);
+    scanner.push(u8concat(new Uint8Array(128), pciRow(), new Uint8Array(256)));
+    scanner.end();
+    expect(sink.s.out.pci).toEqual([
+      expect.objectContaining({
+        name: "HPE Ethernet 1Gb 4-port 331i Adapter",
+        manufacturer: "Broadcom",
+        vendorId: 0x14e4,
+        deviceId: 0x1657,
+        subsystemVendorId: "103C",
+        driverVersion: "20.14.57",
+      }),
+    ]);
+  });
+
+  it("extracts platform inventory rows and empty slots", () => {
+    const sink = makeSinkWrap();
+    const scanner = createZbbScanner(sink.s);
+    scanner.push(
+      u8concat(
+        new Uint8Array(64),
+        slotRow("PCI-E Slot 2", "Empty slot 2", ""),
+        new Uint8Array(256),
+        slotRow("OCP 3.0 Slot 14", "Intel Corporation", "Intel Eth Adptr I350T4 OCPv3"),
+        new Uint8Array(256)
+      )
+    );
+    scanner.end();
+    expect(sink.s.out.slots).toHaveLength(2);
+    expect(sink.s.out.slots[0]).toMatchObject({
+      location: "PCI-E Slot 2",
+      empty: true,
+      emptyLabel: "Empty slot 2",
+    });
+    expect(sink.s.out.slots[1]).toMatchObject({
+      location: "OCP 3.0 Slot 14",
+      manufacturer: "Intel Corporation",
+      model: "Intel Eth Adptr I350T4 OCPv3",
+      macAddress: "507C6F7A039C",
+      partNumber: "K53978-007",
+      version: "1.3310.0",
+    });
+  });
+
+  it("chunked scanning finds the same PCI rows as whole-buffer", () => {
+    const payload = u8concat(
+      new Uint8Array(128),
+      pciRow(),
+      new Uint8Array(256),
+      slotRow("PCI-E Slot 3", "Empty slot 3", ""),
+      new Uint8Array(256)
+    );
+    const run = (chunkSize) => {
+      const sink = makeSink();
+      const scanner = createZbbScanner(sink);
+      for (let off = 0; off < payload.length; off += chunkSize) {
+        scanner.push(payload.subarray(off, Math.min(off + chunkSize, payload.length)));
+      }
+      scanner.end();
+      return sink.collected;
+    };
+    const whole = run(payload.length);
+    expect(whole.pci).toHaveLength(1);
+    expect(whole.slots).toHaveLength(1);
+    for (const chunkSize of [5, 17, 64, 333]) {
+      const c = run(chunkSize);
+      expect(c.slots).toEqual(whole.slots);
+      expect(c.pci).toEqual(whole.pci);
+    }
+  });
+});

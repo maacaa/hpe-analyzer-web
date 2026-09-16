@@ -14,3 +14,9 @@ Thumbs.db
 
 # Local AHS sample files (customer data, ~1.4 GB)
 AHS files/
+
+# Local working files (screenshots, temp scripts, scratch output)
+/*.png
+/out/
+extract-cards.mjs
+src/test/unit/tmp-snippet.js

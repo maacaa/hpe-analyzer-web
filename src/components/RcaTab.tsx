@@ -1,4 +1,4 @@
-import type { BugEntry, RcaEntry, Summary } from "../types";
+import type { BugEntry, Playbook, RcaEntry, Summary } from "../types";
 import { SevBadge } from "./ImlTab";
 
 export function RcaTab({ model }: { model: Summary }) {
@@ -47,6 +47,7 @@ function RcaCard({ r }: { r: RcaEntry }) {
           </span>
         )}
       </div>
+      {r.playbook && <PlaybookBlock playbook={r.playbook} />}
       {r.cause && (
         <div className="rca-cause">
           <div className="rca-resolve-label">Cause (HPE)</div>
@@ -69,6 +70,31 @@ function RcaCard({ r }: { r: RcaEntry }) {
       {r.bugs.map((bug) => (
         <BugBlock key={bug.id} bug={bug} />
       ))}
+    </div>
+  );
+}
+
+function PlaybookBlock({ playbook }: { playbook: Playbook }) {
+  return (
+    <div className="rca-playbook">
+      <div className="rca-playbook-label">What this error means</div>
+      <p>{playbook.meaning}</p>
+      {playbook.details && playbook.details.length > 0 && (
+        <div className="rca-playbook-details">
+          {playbook.details.map((d, i) => (
+            <div key={i} className="rca-playbook-detail">
+              <div className="rca-playbook-detail-label">{d.label}</div>
+              <div className="rca-playbook-detail-value">{d.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="rca-playbook-label">What to do</div>
+      <ol className="rca-playbook-steps">
+        {playbook.steps.map((s, i) => (
+          <li key={i}>{s}</li>
+        ))}
+      </ol>
     </div>
   );
 }

@@ -76,7 +76,7 @@ export function App({ client }: { client: AnalyzerClient }) {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ProgressInfo | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>("firmware");
+  const [activeTab, setActiveTab] = useState<TabId>("hardware");
   const [fileName, setFileName] = useState<string | null>(null);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [theme, setTheme] = useState<Theme>(() => initTheme());

@@ -25,15 +25,24 @@ export function finalizeModel(model, kb) {
   const platform = detectPlatform(model.meta.productName);
 
   // Firmware-version advisories independent of any IML error code (Tips tab).
+  // Errors that hint at outdated firmware add their own software tips (the
+  // installed version and the version that resolves the issue) — deduplicated.
   model.advisories = kb.matchGeneralAdvisories(model.firmware, platform);
 
   // Group critical events into the deduplicated RCA list.
-  const { rca, criticalCount, warningCount } = buildRca(
+  const { rca, softwareTips, criticalCount, warningCount } = buildRca(
     model.iml,
     model.firmware,
     platform,
     kb
   );
+  const seenTips = new Set(model.advisories.map((a) => a.id));
+  for (const tip of softwareTips) {
+    if (!seenTips.has(tip.id)) {
+      seenTips.add(tip.id);
+      model.advisories.push(tip);
+    }
+  }
   model.rca = rca;
   model.stats.criticalCount = criticalCount;
   model.stats.warningCount = warningCount;

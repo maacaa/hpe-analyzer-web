@@ -42,7 +42,6 @@ export function ThemePicker({ theme, onChange }: { theme: Theme; onChange: (t: T
             aria-checked={theme === t}
             onClick={() => { onChange(t); setOpen(false); }}
           >
-            <span className="theme-swatch"><i /><i /><i /><i /></span>
             <span>
               <span className="theme-option-label">{LABELS[t].name}</span>
               <span className="theme-option-desc">{LABELS[t].desc}</span>

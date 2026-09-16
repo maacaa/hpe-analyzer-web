@@ -5,6 +5,7 @@
 
 import { imlDocUrl } from "../services/iml-format.js";
 import { buildPlaybook } from "../services/critical-playbook.js";
+import { buildFirmwareGuidance } from "../services/firmware-guidance.js";
 
 /** Extract the hardware component(s) affected by a critical IML message. */
 /**
@@ -47,6 +48,55 @@ export function normalizeCriticalAlarm(alarm) {
 }
 
 /**
+ * Detect HPE guidance that blames an outdated firmware ("Firmware is
+ * out-of-date", "Firmware is not the latest version", "Update the firmware...").
+ * @param {string|null} cause
+ * @param {string|null} resolution
+ * @returns {boolean}
+ */
+function blamesOutdatedFirmware(cause, resolution) {
+  return Boolean(
+    (cause && /firmware is (out-of-date|not the latest version)/i.test(cause)) ||
+      (resolution && /update (the )?firmware (to the latest|—)/i.test(resolution)) ||
+      (resolution && /system rom 2\.20|update to the latest firmware version/i.test(resolution))
+  );
+}
+
+/**
+ * Rebuild the HPE cause/resolution for an error without matching advisory
+ * tips: the guidance keeps naming the component, now with the version
+ * actually installed in the AHS and the version that resolves the issue, and
+ * the same information is exposed as Tips-tab advisories.
+ * @param {string|null} cause
+ * @param {string|null} resolution
+ * @param {string} title
+ * @param {import("../entities/model.js").FirmwareEntry[]} firmware
+ * @param {any} bugs
+ * @param {string} hexKey
+ * @returns {{cause: string|null, resolution: string|null, tips: any[]}}
+ */
+
+/**
+ * Rebuild the HPE cause/resolution for an error without matching advisory
+ * tips: the guidance keeps naming the component, now with the version
+ * actually installed in the AHS and the version that resolves the issue, and
+ * the same information is exposed as Tips-tab advisories.
+ * @param {string|null} cause
+ * @param {string|null} resolution
+ * @param {string} title
+ * @param {import("../entities/model.js").FirmwareEntry[]} firmware
+ * @param {any} bugs
+ * @param {string} hexKey
+ * @returns {{cause: string|null, resolution: string|null, tips: any[]}}
+ */
+function guidanceWithoutTips(cause, resolution, title, firmware, bugs, hexKey) {
+  // @ts-expect-error: bugs come from the untyped KB port
+  const hasAffectedTip = bugs.some((b) => b.results?.some((r) => r.affected));
+  if (hasAffectedTip) return { cause, resolution, tips: [] };
+  return buildFirmwareGuidance(title, cause, resolution, firmware, bugs, hexKey);
+}
+
+/**
  * Group critical IML events by error type (class|event). Each error type
  * appears once with a repetition counter, affected components, and any related
  * firmware advisories.
@@ -55,10 +105,11 @@ export function normalizeCriticalAlarm(alarm) {
  * @param {import("../entities/model.js").FirmwareEntry[]} firmware
  * @param {string|null} platform
  * @param {import("../ports/kb-port.js").KbPort} kb
- * @returns {{ rca: import("../entities/model.js").RcaEntry[], criticalCount: number, warningCount: number }}
+ * @returns {{ rca: import("../entities/model.js").RcaEntry[], softwareTips: any[], criticalCount: number, warningCount: number }}
  */
 export function buildRca(iml, firmware, platform, kb) {
   const buckets = new Map();
+  const tips = /** @type {any[]} */ ([]);
   let criticalCount = 0;
   let warningCount = 0;
   for (const e of iml) {
@@ -101,7 +152,21 @@ export function buildRca(iml, firmware, platform, kb) {
     }
   }
   const rca = [...buckets.values()]
-    .map((b) => ({ ...b, components: [...b.components] }))
+    .map((b) => {
+      const hpeTexts = blamesOutdatedFirmware(b.cause, b.resolution)
+        ? guidanceWithoutTips(b.cause, b.resolution, b.title, firmware, b.bugs, hexKeyOf(b))
+        : { cause: b.cause, resolution: b.resolution, tips: [] };
+      tips.push(...hpeTexts.tips);
+      return { ...b, cause: hpeTexts.cause, resolution: hpeTexts.resolution, components: [...b.components] };
+    })
     .sort((a, b) => (b.lastTimestamp ?? 0) - (a.lastTimestamp ?? 0));
-  return { rca, criticalCount, warningCount };
+  return { rca, softwareTips: tips, criticalCount, warningCount };
+}
+
+/** @internal rebuild the "class|event" hex key from an RCA bucket
+ * @param {{classCode:number, eventCode:number}} b
+ * @returns {string}
+ */
+function hexKeyOf(b) {
+  return `${b.classCode.toString(16).padStart(4, "0")}|${b.eventCode.toString(16).padStart(4, "0")}`;
 }

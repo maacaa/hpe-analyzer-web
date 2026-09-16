@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { BugEntry, Playbook, RcaEntry, Summary } from "../types";
 import { SevBadge } from "./ImlTab";
 
@@ -51,13 +52,13 @@ function RcaCard({ r }: { r: RcaEntry }) {
       {r.cause && (
         <div className="rca-cause">
           <div className="rca-resolve-label">Cause (HPE)</div>
-          <p>{r.cause}</p>
+          <RichText text={r.cause} />
         </div>
       )}
       {r.resolution && (
         <div className="rca-resolve">
           <div className="rca-resolve-label">Resolution (HPE)</div>
-          <p>{r.resolution}</p>
+          <RichText text={r.resolution} />
         </div>
       )}
       {r.docUrl && (
@@ -71,6 +72,50 @@ function RcaCard({ r }: { r: RcaEntry }) {
         <BugBlock key={bug.id} bug={bug} />
       ))}
     </div>
+  );
+}
+
+const NUMBERED = /^(\d+)\.\s+/;
+
+/** Render an HPE text block: lead lines as paragraphs, numbered lines as an ordered list. */
+function RichText({ text }: { text: string }) {
+  const clean = (s: string) => s.replace(/\*\*/g, "");
+  const blocks = text.split(/\n{2,}/).filter((b) => b.trim());
+  return (
+    <>
+      {blocks.map((block, bi) => {
+        const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+        const out: ReactNode[] = [];
+        let list: { n: number; text: string }[] = [];
+        const flushList = (keySuffix: string) => {
+          if (list.length > 0) {
+            out.push(
+              <ol key={`ol-${bi}-${keySuffix}`} className="rca-hpe-steps">
+                {list.map((item, li) => (
+                  <li key={li} value={item.n}>{clean(item.text)}</li>
+                ))}
+              </ol>
+            );
+            list = [];
+          }
+        };
+        for (const line of lines) {
+          const m = NUMBERED.exec(line);
+          if (m) list.push({ n: Number(m[1]), text: line.slice(m[0].length) });
+          else {
+            flushList(String(out.length));
+            const withBold = clean(line);
+            if (/:$/.test(line)) {
+              out.push(<div key={`p-${bi}-${out.length}`} className="rca-hpe-lead">{withBold}</div>);
+            } else {
+              out.push(<p key={`p-${bi}-${out.length}`}>{withBold}</p>);
+            }
+          }
+        }
+        flushList("end");
+        return <div key={bi}>{out}</div>;
+      })}
+    </>
   );
 }
 

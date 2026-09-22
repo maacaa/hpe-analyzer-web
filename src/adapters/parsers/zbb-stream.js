@@ -17,7 +17,13 @@
 // pattern straddling a chunk boundary is fully visible on the next push.
 
 import { u16le, latin1, indexOfSeq, textBytes } from "./bytes.js";
-import { matchDate, FW_NAME_VALUE } from "./zbb.js";
+import {
+  matchDate,
+  FW_NAME_VALUE,
+  PLAIN_NEEDLE,
+  parseBlock,
+  logVariantAt,
+} from "./zbb.js";
 
 const SLASH = 0x2f;
 const OVERLAP = 4096;
@@ -383,6 +389,7 @@ export function createZbbScanner(sink) {
   let win = new Uint8Array(0); // kept tail (carry) of the decompressed stream
   let winAbs = 0;              // absolute offset of win[0] within the record
   let lastEntryRec = -1;       // abs recStart of the last emitted log entry
+  let lastPlainRec = -1;       // abs position of the last emitted plain echo entry
   let lastInlineAbs = -1;      // abs offset of the last emitted inline record
   let lastFwAbs = -1;          // abs offset of the last emitted firmware match
   const pciState = { last: -1 };
@@ -423,12 +430,12 @@ export function createZbbScanner(sink) {
       const i = buf.indexOf(SLASH, pos);
       if (i < 0) break;
       const dateStart = i - 2;
-      if (dateStart >= 0 && matchDate(buf, dateStart)) {
-        const recStart = dateStart - 23;
-        if (recStart >= 0 && buf[recStart] === 0x18 && buf[recStart + 1] === 0x0d) {
+      if (dateStart >= 18 && matchDate(buf, dateStart) && buf[dateStart - 18] === 0x03) {
+        const variant = logVariantAt(buf, dateStart);
+        if (variant !== null) {
           const p = dateStart + 20; // date + null terminator
           if (p + 2 > n) {
-            if (!final) return { stop: recStart };
+            if (!final) return { stop: dateStart - 28 };
             // Truncated at record end: the whole-buffer original would read
             // an empty message and drop the entry — do the same.
             pos = dateStart + 19;
@@ -438,28 +445,68 @@ export function createZbbScanner(sink) {
           const msgEnd = findMessageEnd(buf, msgStart);
           if (msgEnd < n || final) {
             const message = latin1(buf, msgStart, msgEnd).trim();
-            const absRec = base + recStart;
+            const absRec = base + dateStart;
             if (message && absRec > lastEntryRec) {
               lastEntryRec = absRec;
-              const type = buf[recStart + 2];
+              const echo = variant === 0x1a;
               sink.onEntry({
                 date: latin1(buf, dateStart, dateStart + 19),
                 id: u16le(buf, p),
-                classCode: u16le(buf, recStart + 7),
-                eventCode: u16le(buf, recStart + 9),
-                logType: type === 0x0b ? "iml" : type === 0x0c ? "iel" : "unknown",
+                classCode: u16le(buf, dateStart - 16),
+                eventCode: u16le(buf, dateStart - 14),
+                // IML tab = the error log (type 0x0B); Event Logs tab = the
+                // iLO Event Log / IEL (type 0x0C); plain echo copies (0x1A)
+                // are IML entries too (deduped by the sink).
+                logType: variant === 0x0c ? "iel" : "iml",
                 message,
+                ...(echo ? { echo: true } : {}),
               });
             }
             pos = dateStart + 19;
           } else {
-            return { stop: recStart };
+            return { stop: dateStart - 28 };
           }
         } else {
           pos = dateStart + 19;
         }
       } else {
         pos = i + 1;
+      }
+    }
+    return { stop: -1 };
+  }
+
+  /**
+   * Plain-text echo entries (no 18 0D marker): iLO serializes each log entry
+   * a second time as inline text. The date field may be invalid or absent —
+   * those entries must still be surfaced, so the raw string is kept and the
+   * model derives a null timestamp for them.
+   * @returns {{stop: number}} relative position to keep from, or -1
+   */
+  function scanPlainEntries(buf, base, final) {
+    const n = buf.length;
+    let pos = 0;
+    while (pos < n) {
+      const marker = indexOfSeq(buf, PLAIN_NEEDLE, pos);
+      if (marker < 0) break;
+      const r = marker + 2; // position of the 0x0D marker
+      if (r + 31 > n && !final) return { stop: r - 2 };
+      const parsed = parseBlock(buf, r);
+      if (!parsed) {
+        if (!final) return { stop: r - 2 };
+        pos = r + 1;
+        continue;
+      }
+      const msgEnd = findMessageEnd(buf, parsed.msgStart);
+      if (msgEnd >= n && !final) return { stop: r - 2 };
+      pos = parsed.msgStart;
+      // echo copies with a valid timestamp are captured by the belt loop;
+      // the plain pass only adds the dateless ones
+      if (matchDate(buf, parsed.dateStart)) continue;
+      const abs = base + r;
+      if (abs > lastPlainRec) {
+        lastPlainRec = abs;
+        sink.onEntry(parsed.entry);
       }
     }
     return { stop: -1 };
@@ -576,6 +623,7 @@ export function createZbbScanner(sink) {
     const base = winAbs;
     const n = buf.length;
     const rEntry = scanLogEntries(buf, base, final);
+    const rPlain = scanPlainEntries(buf, base, final);
     const rInline = scanInline(buf, base, final);
     const rFw = scanFirmware(buf, base, final);
     const rIdent = scanIdentity(buf, final);
@@ -593,7 +641,7 @@ export function createZbbScanner(sink) {
     }
     let keep = n - OVERLAP;
     if (keep < 0) keep = 0;
-    for (const r of [rEntry, rInline, rFw, rIdent, pci, slots]) {
+    for (const r of [rEntry, rPlain, rInline, rFw, rIdent, pci, slots]) {
       if (r.stop >= 0 && r.stop < keep) keep = r.stop;
     }
     if (keep > 0) {

@@ -78,9 +78,10 @@ export function buildRecord(name, data, { gzip = false } = {}) {
 }
 
 /**
- * Build a synthetic ZBB log record:
- *   [18 0D <type>] [20-byte header with class/event at offset 7/9]
- *   [date "MM/DD/YYYY HH:MM:SS" + null] [id u16] [message]
+ * Build a synthetic ZBB log record (old belt generation):
+ *   [18 0D <type>] [seq u16] [03 0f] [class u16 @+7] [event u16 @+9]
+ *   [len u16] [10 fixed bytes, 01 at +16] [date "MM/DD/YYYY HH:MM:SS" + null]
+ *   [id u16] [message]
  */
 export function buildLogRecord({
   type = 0x0b,
@@ -95,8 +96,13 @@ export function buildLogRecord({
   header[0] = 0x18;
   header[1] = 0x0d;
   header[2] = type;
+  header[3] = 0xe1; // u16 seq (any value)
+  header[5] = 0x03;
+  header[6] = 0x0f;
   writeU16LE(header, 7, classCode);
   writeU16LE(header, 9, eventCode);
+  writeU16LE(header, 13, message.length + 4); // len field seen in the wild
+  header[16] = 0x01;
 
   return concat([
     header,

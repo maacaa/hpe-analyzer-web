@@ -40,6 +40,23 @@ function readMessage(buf, start) {
   return latin1(buf, start, end).trim();
 }
 
+// AHS-log record layout (anchored on the ASCII date "MM/DD/YYYY HH:MM:SS"):
+//   the class code sits at dateStart-16 and the event code at dateStart-14 in
+//   every firmware generation seen so far; `03 <sub>` marks the header at
+//   dateStart-18. The `0D <type>` marker byte (0x0b = IML, 0x0c = iLO Event
+//   Log, 0x1a = plain-text echo copy) floats 20-27 bytes before the date
+//   depending on the generation, so it is located by scanning that window.
+
+/** Marker/type byte of the record that contains a date at `dateStart`, or null. */
+export function logVariantAt(buf, dateStart) {
+  for (let k = Math.max(0, dateStart - 28); k <= dateStart - 21; k++) {
+    if (buf[k] !== 0x0d) continue;
+    const t = buf[k + 1];
+    if (t === 0x0b || t === 0x0c || t === 0x1a) return t;
+  }
+  return null;
+}
+
 /** Extract IML / iLO Event Log entries from a decoded zbb buffer. */
 export function extractLogEntries(buf) {
   const entries = [];
@@ -49,26 +66,105 @@ export function extractLogEntries(buf) {
     const i = buf.indexOf(slash, pos);
     if (i < 0) break;
     const dateStart = i - 2;
-    if (dateStart >= 0 && matchDate(buf, dateStart)) {
-      const recStart = dateStart - 23;
-      if (recStart >= 0 && buf[recStart] === 0x18 && buf[recStart + 1] === 0x0d) {
-        const type = buf[recStart + 2];
-        const logType = type === 0x0b ? "iml" : type === 0x0c ? "iel" : "unknown";
-        const classCode = u16le(buf, recStart + 7);
-        const eventCode = u16le(buf, recStart + 9);
+    if (dateStart >= 18 && matchDate(buf, dateStart) && buf[dateStart - 18] === 0x03) {
+      const variant = logVariantAt(buf, dateStart);
+      if (variant !== null) {
+        const classCode = u16le(buf, dateStart - 16);
+        const eventCode = u16le(buf, dateStart - 14);
         const date = latin1(buf, dateStart, dateStart + 19);
 
-        let p = dateStart + 20; // date + null
+        const p = dateStart + 20; // date + null
         const id = u16le(buf, p);
-        p += 2;
-        const message = readMessage(buf, p);
+        const message = readMessage(buf, p + 2);
         if (message) {
-          entries.push({ date, id, classCode, eventCode, logType, message });
+          const echo = variant === 0x1a;
+          entries.push({
+            date,
+            id,
+            classCode,
+            eventCode,
+            logType: variant === 0x0c ? "iel" : "iml",
+            message,
+            ...(echo ? { echo: true } : {}),
+          });
         }
       }
       pos = dateStart + 19;
     } else {
       pos = i + 1;
+    }
+  }
+  return entries.concat(extractPlainLogEntries(buf));
+}
+
+// Plain-text echo blocks: besides the binary belt, iLO also serializes log
+// entries inline as text with the same header fields but ending in `0d 1a`:
+//   <lead> 00 00 | 0d 1a | <seq ...> | 03 <sub> | <class u16> | <event u16> |
+//   ... | <10 fixed bytes> | <date string> 00 | <id u16> | <message>
+// The lead byte and field widths vary between firmware generations, so both
+// layouts are probed. The date field is a raw string that may be invalid or
+// absent ("[Not Set]") — those entries must still be surfaced, so the field
+// is read up to its null terminator instead of assuming the timestamp layout.
+const PLAIN_NEEDLE = [0x00, 0x00, 0x0d, 0x1a];
+export { PLAIN_NEEDLE };
+const PLAIN_DATE_MAX = 32;
+
+/** Old/new echo layouts relative to the `0x0D 0x1A` marker at `r`. */
+export const PLAIN_LAYOUTS = [
+  { threeAt: 4, classAt: 6, dateAt: 22 }, // seq u16
+  { threeAt: 10, classAt: 12, dateAt: 28 }, // seq u32 + extra u16
+];
+
+/**
+ * Parse the plain-text echo block anchored at the `0D 1A` marker at `r`.
+ * @returns {{entry: object, msgStart: number, dateStart: number}|null}
+ */
+export function parseBlock(buf, r) {
+  for (const L of PLAIN_LAYOUTS) {
+    if (r + L.dateAt > buf.length) continue;
+    if (buf[r + L.threeAt] !== 0x03) continue;
+    const classCode = u16le(buf, r + L.classAt);
+    const eventCode = u16le(buf, r + L.classAt + 2);
+    const dateStart = r + L.dateAt;
+    let d = dateStart;
+    while (d < buf.length && buf[d] !== 0 && d - dateStart < PLAIN_DATE_MAX) d++;
+    if (d >= buf.length || buf[d] !== 0) continue; // truncated / no terminator
+    const date = latin1(buf, dateStart, d).trim();
+    const idAt = d + 1;
+    if (!date || idAt + 2 > buf.length) continue;
+    const id = u16le(buf, idAt);
+    const msgStart = idAt + 2;
+    const message = readMessage(buf, msgStart);
+    if (!message) continue;
+    return {
+      entry: { date, id, classCode, eventCode, logType: "iml", message, echo: true },
+      msgStart,
+      dateStart,
+    };
+  }
+  return null;
+}
+
+/** Parse the plain-text echo block at `r` (0x0D position) — entry only. */
+export function parsePlainEntryAt(buf, r) {
+  return parseBlock(buf, r)?.entry ?? null;
+}
+
+/** Extract the plain-text echo log entries from a decoded zbb buffer. */
+export function extractPlainLogEntries(buf) {
+  const entries = [];
+  let pos = 0;
+  while (pos < buf.length) {
+    const marker = indexOfSeq(buf, PLAIN_NEEDLE, pos); // position of `00 00`
+    if (marker < 0) break;
+    const parsed = parseBlock(buf, marker + 2); // the 0x0D position
+    if (parsed) {
+      // echo copies with a valid timestamp are captured by the belt loop
+      // (the date is the shared anchor), so only keep the dateless ones here
+      if (!matchDate(buf, parsed.dateStart)) entries.push(parsed.entry);
+      pos = parsed.msgStart;
+    } else {
+      pos = marker + 1;
     }
   }
   return entries;

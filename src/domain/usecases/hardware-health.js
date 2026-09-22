@@ -117,31 +117,85 @@ export function enrichHardware(hardware, iml, meta, firmware = []) {
     }
   }
 
-  // Synthetic "System board" entry from the factory product identity plus the
-  // board-level firmware versions and total system memory.
-  if (meta.productName) {
+  // Subsystem-level fallback: some critical events name a subsystem without a
+  // unit reference that matches the inventory (iLO slot numbering differs from
+  // the IML numbering, e.g. the IML says "Power Supply 1" while the inventory
+  // catalogues "Power Supply 8"). When no unit of that type got flagged,
+  // attribute the subsystem's critical alarms to every unit so the fault is
+  // surfaced in the Hardware tab / chassis instead of silently hidden.
+  /** @param {string} type @param {RegExp} re */
+  const subsystemFallback = (type, re) => {
+    const units = hardware.filter((h) => h.type === type);
+    if (units.length === 0) return;
+    if (units.some((h) => h.status === "failed" || h.status === "warning")) return;
+    const hits = signals.filter(
+      (e) => e.severity === "critical" && re.test(e.alarm || e.message)
+    );
+    if (hits.length === 0) return;
+    const issues = collectIssues(hits, () => true);
+    for (const u of units) {
+      u.status = "failed";
+      if (issues.length > 0) u.issues = issues;
+    }
+  };
+  subsystemFallback("power-supply", /\bpower suppl(y|ies)\b|\binput power\b/i);
+  subsystemFallback("fan", /\bfans?\b/i);
+  subsystemFallback("memory", /\bmemory\b|\bdimm\b/i);
+
+  // System board: reuse the board entry the bcert already catalogued (TPM /
+  // product-identity commodity) instead of pushing a duplicate, then derive
+  // its health from board-level faults (EFUSE/CPLD/system-board/mezzanine) —
+  // e.g. "Server Critical Fault (Power On Fault, System Board, AUX/MAIN EFUSE)".
+  const boardPred = (/** @type {import("../entities/model.js").ImlEntry} */ e) =>
+    /\bsystem board\b|\befuse\b|\bcpld\b|\bmezzanine\b/i.test(e.alarm || e.message);
+  let board = hardware.find((h) => h.type === "system-board");
+  if (!board && meta.productName) {
+    board = { type: "system-board", source: "bcert.pkg (ProductIdentification)" };
+    hardware.push(board);
+  }
+  if (board) {
+    // merge + drop duplicate board entries (bcert commodity + old synthetic)
+    for (let i = hardware.length - 1; i >= 0; i--) {
+      const dup = /** @type {Record<string, unknown>} */ (hardware[i]);
+      if (dup === /** @type {unknown} */ (board) || dup.type !== "system-board") continue;
+      for (const [k, v] of Object.entries(dup)) {
+        if (v !== undefined && (/** @type {Record<string, unknown>} */ (board))[k] === undefined) {
+          (/** @type {Record<string, unknown>} */ (board))[k] = v;
+        }
+      }
+      hardware.splice(i, 1);
+    }
+    // A bcert "TPM" commodity entry models itself as the system board: prefer
+    // the real product name for the board identity.
+    if (meta.productName && /tpm/i.test(String(board.model ?? ""))) {
+      board.model = /** @type {string} */ (meta.productName);
+    }
+    const fill = (/** @type {string} */ k, /** @type {unknown} */ v) => {
+      if (v !== undefined && (/** @type {Record<string, unknown>} */ (board))[k] === undefined) {
+        (/** @type {Record<string, unknown>} */ (board))[k] = v;
+      }
+    };
     const rom = firmware.find((f) => /(^System ROM|^BIOS \(System ROM\))/.test(f.component));
     const ilo = firmware.find((f) => /iLO \(Lights-Out Management\)/.test(f.component));
     const bmc = firmware.find((f) => f.component === "BMC");
     const cpld = firmware.find((f) => f.component === "System CPLD");
-    hardware.push({
-      type: "system-board",
-      manufacturer: /** @type {string|undefined} */ (meta.manufacturer),
-      model: /** @type {string} */ (meta.productName),
-      serialNumber: /** @type {string|undefined} */ (meta.serialNumber),
-      partNumber: /** @type {string|undefined} */ (meta.productId),
-      orderNumber: /** @type {string|undefined} */ (meta.orderNumber),
-      buildOfMaterials: /** @type {string|undefined} */ (meta.buildOfMaterials),
-      universalUniqueId: /** @type {string|undefined} */ (meta.universalUniqueId),
-      assetTag: /** @type {string|undefined} */ (meta.assetTag),
-      skuNumber: /** @type {string|undefined} */ (meta.skuNumber),
-      totalSystemMemory: /** @type {string|undefined} */ (meta.totalSystemMemory),
-      systemRomVersion: rom?.version,
-      iloVersion: ilo?.version,
-      bmcVersion: bmc?.version,
-      cpldVersion: cpld?.version,
-      source: "bcert.pkg (ProductIdentification)",
-    });
+    fill("manufacturer", meta.manufacturer);
+    fill("model", meta.productName);
+    fill("serialNumber", meta.serialNumber);
+    fill("partNumber", meta.productId);
+    fill("orderNumber", meta.orderNumber);
+    fill("buildOfMaterials", meta.buildOfMaterials);
+    fill("universalUniqueId", meta.universalUniqueId);
+    fill("assetTag", meta.assetTag);
+    fill("skuNumber", meta.skuNumber);
+    fill("totalSystemMemory", meta.totalSystemMemory);
+    fill("systemRomVersion", rom?.version);
+    fill("iloVersion", ilo?.version);
+    fill("bmcVersion", bmc?.version);
+    fill("cpldVersion", cpld?.version);
+    const { status, issues } = applyPred(boardPred);
+    board.status = status;
+    if (issues.length > 0) board.issues = issues;
   }
 }
 

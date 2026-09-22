@@ -2,7 +2,12 @@
 // IndexedDB cache tests (RF-12) using fake-indexeddb.
 import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach } from "vitest";
-import { AnalysisCache, MAX_ENTRIES } from "../../cache/analysis-cache";
+import {
+  AnalysisCache,
+  MAX_ENTRIES,
+  PIPELINE_VERSION,
+  type CachedAnalysis,
+} from "../../cache/analysis-cache";
 import { fingerprintFile } from "../../cache/fingerprint";
 
 function makeFile(name: string, content: string, lastModified = 1000): File {
@@ -10,6 +15,11 @@ function makeFile(name: string, content: string, lastModified = 1000): File {
     type: "application/octet-stream",
     lastModified,
   });
+}
+
+/** The worker always tags cached models with the current pipeline version. */
+function put(cache: AnalysisCache, entry: Omit<CachedAnalysis, "pipelineVersion">) {
+  return cache.put({ ...entry, pipelineVersion: PIPELINE_VERSION });
 }
 
 describe("fingerprintFile", () => {
@@ -60,7 +70,7 @@ describe("AnalysisCache", () => {
   it("round-trips a stored model", async () => {
     const cache = new AnalysisCache();
     const model = { meta: { productName: "ProLiant" }, iml: [{ a: 1 }] };
-    await cache.put({
+    await put(cache, {
       fingerprint: "fp-1",
       name: "a.ahs",
       size: 10,
@@ -78,10 +88,23 @@ describe("AnalysisCache", () => {
     expect(await cache.get("nope")).toBeNull();
   });
 
+  it("treats models cached by an older pipeline version as missing", async () => {
+    const cache = new AnalysisCache();
+    await cache.put({
+      fingerprint: "fp-old",
+      name: "a.ahs",
+      size: 10,
+      analyzedAt: 1,
+      pipelineVersion: PIPELINE_VERSION - 1,
+      model: { stale: true },
+    });
+    expect(await cache.get("fp-old")).toBeNull();
+  });
+
   it("overwrites an existing fingerprint", async () => {
     const cache = new AnalysisCache();
-    await cache.put({ fingerprint: "fp-1", name: "a.ahs", size: 10, analyzedAt: 1, model: { v: 1 } });
-    await cache.put({ fingerprint: "fp-1", name: "a.ahs", size: 10, analyzedAt: 2, model: { v: 2 } });
+    await put(cache, { fingerprint: "fp-1", name: "a.ahs", size: 10, analyzedAt: 1, model: { v: 1 } });
+    await put(cache, { fingerprint: "fp-1", name: "a.ahs", size: 10, analyzedAt: 2, model: { v: 2 } });
     const got = await cache.get("fp-1");
     expect(got!.model).toEqual({ v: 2 });
   });
@@ -89,7 +112,7 @@ describe("AnalysisCache", () => {
   it(`evicts beyond ${MAX_ENTRIES} entries (oldest first)`, async () => {
     const cache = new AnalysisCache();
     for (let i = 0; i < MAX_ENTRIES + 2; i++) {
-      await cache.put({
+      await put(cache, {
         fingerprint: `fp-${i}`,
         name: `f${i}.ahs`,
         size: i,

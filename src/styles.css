@@ -291,8 +291,12 @@ body {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
-  margin-top: 16px;
   font-weight: 600;
+}
+
+/* the DropZone browse button stacks vertically below its hint text */
+.dropzone .btn-primary {
+  margin-top: 16px;
 }
 
 .btn-primary:hover {

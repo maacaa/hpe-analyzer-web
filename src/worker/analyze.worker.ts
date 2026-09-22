@@ -17,7 +17,7 @@ import { analyzeWebStreaming } from "../adapters/delivery/analyzer-stream.js";
 import { LogQueryEngine } from "./log-query.js";
 import { buildPdfReport } from "./pdf-report.js";
 import { fingerprintFile } from "../cache/fingerprint.js";
-import { AnalysisCache } from "../cache/analysis-cache.js";
+import { AnalysisCache, PIPELINE_VERSION } from "../cache/analysis-cache.js";
 import type {
   AnalyzeResult,
   Summary,
@@ -102,6 +102,7 @@ async function runAnalyze(id: number, file: File) {
         name: file.name,
         size: file.size,
         analyzedAt: Date.now(),
+        pipelineVersion: PIPELINE_VERSION,
         model: m,
       });
     } catch (err) {

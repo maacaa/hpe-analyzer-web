@@ -11,6 +11,25 @@ import { FW_NAME_VALUE } from "./zbb.js";
 // dedupe per model by identity (first occurrence kept, later rows ignored).
 const PCI_SEEN = new WeakMap();
 
+// Plain-text echo entries duplicate the binary belt entries (the same event
+// serialized twice) and may arrive before or after their belt copy: dedupe
+// by class|event|date|alarm so an event is surfaced exactly once. Belt
+// (non-echo) copies always win: their message carries the ACTION text.
+const ENTRY_SEEN = new WeakMap();
+
+/**
+ * @param {import("../../domain/entities/model.js").Model} model
+ * @returns {Map<string, Map<string, Record<string, unknown>>>}
+ */
+function entrySeenFor(model) {
+  let seen = ENTRY_SEEN.get(model);
+  if (!seen) {
+    seen = new Map();
+    ENTRY_SEEN.set(model, seen);
+  }
+  return seen;
+}
+
 /**
  * @param {import("../../domain/entities/model.js").Model} model
  * @returns {Set<string>}
@@ -92,6 +111,48 @@ export function makeZbbSink(model, kb, recName) {
         timestamp: ts ? ts.getTime() : null,
         source: recName,
       };
+      const seen = entrySeenFor(model);
+      const groupKey = `${e.classCode}|${e.eventCode}|${e.date}`;
+      let group = seen.get(groupKey);
+      if (!group) {
+        group = new Map();
+        seen.set(groupKey, group);
+      }
+      const alarmKey = alarm.replace(/\s+/g, " ").trim();
+      let stored = group.get(alarmKey);
+      if (!stored && entry.echo) {
+        // echo texts can carry trailing junk before the terminator (e.g. a
+        // stray byte after "...possible."), so also match a belt copy whose
+        // collapsed alarm differs only by a short tail.
+        for (const [k, v] of group) {
+          if (Math.abs(k.length - alarmKey.length) > 3) continue;
+          const [shorter, longer] =
+            k.length <= alarmKey.length ? [k, alarmKey] : [alarmKey, k];
+          if (longer.startsWith(shorter)) {
+            stored = v;
+            break;
+          }
+        }
+      }
+      if (stored) {
+        if (entry.echo) {
+          // echo duplicate of an already-stored entry: backfill ACTION text
+          if (!stored.resolution && resolution) stored.resolution = resolution;
+          return;
+        }
+        if (stored.echo) {
+          // the belt copy arrived after its echo: adopt the richer content
+          stored.id = entry.id;
+          stored.message = entry.message;
+          stored.alarm = entry.alarm;
+          stored.resolution = entry.resolution ?? stored.resolution;
+          stored.timestamp = entry.timestamp;
+          stored.echo = false;
+          return;
+        }
+        // byte-identical belt repeat: keep both (real repeated events)
+      }
+      group.set(alarmKey, entry);
       // IML tab = the error log (type 0x0B); Event Logs tab = the iLO
       // Event Log / IEL (type 0x0C, e.g. sessions, firmware, resets).
       if (e.logType === "iel") model.events.push(entry);
